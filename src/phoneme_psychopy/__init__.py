@@ -1,0 +1,1 @@
+"""PsychoPy phoneme experiment scaffold."""
