@@ -5,6 +5,7 @@ from pathlib import Path
 import time
 from typing import Any
 
+from .audio_playback import play_audio_file
 from .audio_recorder import BaseRecorder
 from .logger import update_trial_log_after_recording, update_trial_status
 from .models import RunSummary, TrialDefinition, TrialEventTimes
@@ -25,15 +26,35 @@ BLOCK_LABELS = {
 }
 
 
+def _build_response_prompt_text(trial: TrialDefinition, show_phoneme_label: bool = False) -> str:
+    """Build the participant-facing response prompt, hiding the target phoneme by default."""
+
+    phase_label = "Practice" if trial.is_practice else f"Block {trial.block_index}"
+    prompt_lines = [
+        f"{phase_label} · Trial {trial.trial_in_block}",
+    ]
+    if show_phoneme_label:
+        prompt_lines.append(f"Phoneme label: {trial.phoneme}")
+    prompt_lines.extend(
+        [
+            "",
+            "Please repeat what you heard.",
+            "Press SPACE to start recording, or ESC to quit.",
+        ]
+    )
+    return "\n".join(prompt_lines)
+
+
 def run_placeholder_trials(
     window: Any,
     trials: list[TrialDefinition],
     recorder: BaseRecorder,
     trial_log_path: Path,
+    show_phoneme_label: bool = False,
 ) -> RunSummary:
     """Run a conservative PsychoPy trial flow with playable stimuli and saved response audio."""
 
-    from psychopy import core, event, sound, visual
+    from psychopy import core, event, visual
 
     text_stimulus = visual.TextStim(window, color="white", height=0.05, wrapWidth=1.5, text="")
     fixation_stimulus = visual.TextStim(window, color="white", height=0.08, text="+")
@@ -90,21 +111,21 @@ def run_placeholder_trials(
         core.wait(0.5)
 
         stimulus_onset_time = datetime.now().isoformat(timespec="seconds")
-        if trial.stimulus_file and Path(trial.stimulus_file).exists():
-            sound_stimulus = sound.Sound(str(trial.stimulus_file))
-            sound_stimulus.play()
-            core.wait(sound_stimulus.getDuration())
+        if trial.stimulus_file is None:
+            raise FileNotFoundError(
+                f"Trial {trial.trial_index} ({trial.track_id}, {trial.phoneme}) has no resolved stimulus file."
+            )
 
-        phase_label = "Practice" if trial.is_practice else f"Block {trial.block_index}"
-        text_stimulus.text = (
-            f"{phase_label} · Trial {trial.trial_in_block}\n"
-            f"Track: {trial.track_id}\n"
-            f"Condition: {trial.session_type}\n"
-            f"SNR: {trial.snr}\n"
-            f"Phoneme label: {trial.phoneme}\n\n"
-            "Please repeat what you heard.\n"
-            "Press SPACE to start recording, or ESC to quit."
-        )
+        stimulus_path = Path(trial.stimulus_file)
+        if not stimulus_path.exists():
+            raise FileNotFoundError(
+                f"Trial {trial.trial_index} ({trial.track_id}, {trial.phoneme}) stimulus file does not exist: "
+                f"{stimulus_path}"
+            )
+
+        play_audio_file(stimulus_path)
+
+        text_stimulus.text = _build_response_prompt_text(trial, show_phoneme_label=show_phoneme_label)
         text_stimulus.draw()
         window.flip()
         response_prompt_time = datetime.now().isoformat(timespec="seconds")
@@ -156,19 +177,19 @@ def run_placeholder_trials(
     )
 
 
-def run_simulated_trials(
+def run_headless_trials(
     trials: list[TrialDefinition],
     recorder: BaseRecorder,
     trial_log_path: Path,
     abort_after_trial_count: int | None = None,
 ) -> RunSummary:
-    """Run a non-GUI validation path that still writes recordings and finalizes the trial log."""
+    """Run a non-GUI validation path that still records real audio and finalizes the trial log."""
 
     completed_trials = 0
     aborted_after_trial_index: int | None = None
     for completed_count_before_trial, trial in enumerate(trials):
         if abort_after_trial_count is not None and completed_count_before_trial >= abort_after_trial_count:
-            update_trial_status(trial_log_path, trial, "aborted_before_start", "Dry-run simulated early stop")
+            update_trial_status(trial_log_path, trial, "aborted_before_start", "Dry-run early stop")
             aborted_after_trial_index = trials[completed_count_before_trial - 1].trial_index if completed_count_before_trial > 0 else None
             break
 
@@ -193,7 +214,7 @@ def run_simulated_trials(
             trial,
             recording_result,
             event_times,
-            notes="dry-run simulated recording",
+            notes="dry-run headless recording",
         )
         completed_trials += 1
 

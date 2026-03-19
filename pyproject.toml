@@ -3,19 +3,16 @@ name = "psychopy-phoneme"
 version = "0.1.0"
 description = "PsychoPy scaffold for phoneme perception experiments with configurable noise sessions."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
   "miniaudio>=1.61",
-  "numpy>=2.3.3",
+  "numpy>=1.26,<2.3",
   "openpyxl>=3.1.5",
   "pandas>=2.3.2",
   "sounddevice>=0.5.5",
   "soundfile>=0.13.1",
-]
-
-[project.optional-dependencies]
-psychopy = [
-  "psychopy>=2024.2",
+  "psychtoolbox",
+  "psychopy"
 ]
 
 [project.scripts]
@@ -24,3 +21,9 @@ phoneme-preprocess = "phoneme_psychopy.audio_preprocess:main"
 
 [tool.uv]
 package = true
+environments = [
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]

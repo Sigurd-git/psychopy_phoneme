@@ -12,7 +12,7 @@ Minimal, research-oriented scaffold for a PsychoPy experiment on phoneme percept
 - Session builder for `babble`, `white`, or `both`
 - Trial metadata logging to CSV, including block indices and trial event timestamps
 - PsychoPy entry point with playable pre-generated stimuli and a recording backend hook
-- Dry-run validation mode that writes simulated response WAV files, practice trials, and finalized/aborted trial logs
+- Dry-run validation mode that runs headlessly while still saving real microphone recordings, practice trials, and finalized/aborted trial logs
 
 ## Planned next steps
 
@@ -30,7 +30,7 @@ Generate normalized mixed stimuli first:
 uv run phoneme-preprocess
 ```
 
-Validate the non-GUI scaffold and write simulated response recordings:
+Validate the non-GUI scaffold while still writing real microphone recordings:
 
 ```bash
 uv run python -m phoneme_psychopy.main --dry-run --session-type both --practice --max-trials 5
@@ -49,6 +49,10 @@ uv sync --extra psychopy
 uv run phoneme-psychopy --prompt-config
 ```
 
+The participant response screen hides the target phoneme by default. Use `--show-phoneme-label` only for debugging or operator checks.
+
+The PsychoPy dependency set is currently locked for Python 3.11-3.13 on 64-bit desktop platforms.
+
 `--prompt-config` now uses terminal prompts instead of a Tk window, which avoids X11/xcb crashes on some Linux setups.
 
-For real microphone capture, the target machine also needs a working PortAudio installation. If audio input is not available yet, use `--simulate-recording` during validation.
+For microphone capture, the target machine needs a working PortAudio installation and an available system input device.

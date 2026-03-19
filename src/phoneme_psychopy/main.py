@@ -7,8 +7,8 @@ from .io_utils import create_run_paths
 from .logger import initialize_trial_log
 from .schedule_loader import build_trial_preview_table, load_trials_from_workbook
 from .session_builder import build_session_trials
-from .stimulus_registry import attach_generated_stimulus_paths
-from .trial_runner import run_placeholder_trials, run_simulated_trials
+from .stimulus_registry import attach_generated_stimulus_paths, find_trials_missing_stimuli
+from .trial_runner import run_headless_trials, run_placeholder_trials
 from .ui import build_config_from_cli, parse_cli_args, summarize_config
 
 
@@ -27,6 +27,21 @@ def main() -> None:
     session_trials = attach_generated_stimulus_paths(session_trials)
     if args.max_trials is not None:
         session_trials = session_trials[: args.max_trials]
+    if not args.dry_run:
+        missing_stimulus_trials = find_trials_missing_stimuli(session_trials)
+        if missing_stimulus_trials:
+            preview_lines = [
+                (
+                    f"trial_index={trial.trial_index}, track={trial.track_id}, "
+                    f"phoneme={trial.phoneme}, path={trial.stimulus_file}"
+                )
+                for trial in missing_stimulus_trials[:5]
+            ]
+            raise FileNotFoundError(
+                "Resolved stimulus files are missing for one or more trials.\n"
+                + "\n".join(preview_lines)
+                + "\nRegenerate the stimuli manifest with `uv run phoneme-preprocess` if needed."
+            )
 
     run_paths = create_run_paths(config.subject_id, config.data_dir)
     initialize_trial_log(run_paths.trial_log_path, session_trials)
@@ -37,13 +52,12 @@ def main() -> None:
 
     recorder = create_recorder(
         recordings_dir=run_paths.recordings_dir,
-        simulate_recording=config.simulate_recording or args.dry_run,
         sample_rate=config.recording_sample_rate,
         channels=config.recording_channels,
     )
 
     if args.dry_run:
-        run_summary = run_simulated_trials(
+        run_summary = run_headless_trials(
             session_trials,
             recorder,
             run_paths.trial_log_path,
@@ -68,7 +82,13 @@ def main() -> None:
 
     window = visual.Window(fullscr=config.fullscreen, color="black", units="height")
     try:
-        run_placeholder_trials(window, session_trials, recorder, run_paths.trial_log_path)
+        run_placeholder_trials(
+            window,
+            session_trials,
+            recorder,
+            run_paths.trial_log_path,
+            show_phoneme_label=config.show_phoneme_label,
+        )
     finally:
         window.close()
 

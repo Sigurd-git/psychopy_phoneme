@@ -116,43 +116,15 @@ class SoundDeviceRecorder(BaseRecorder):
         )
 
 
-class SimulatedRecorder(BaseRecorder):
-    """Test-friendly recorder that writes silent placeholder WAV files."""
-
-    backend_name = "simulated"
-
-    def stop_trial_recording(self) -> RecordingResult:
-        if self._active_trial is None or self._started_at_monotonic is None or self._started_at_iso is None:
-            raise RuntimeError("No active trial recording to stop.")
-
-        recording_path = self.build_recording_path(self._active_trial)
-        duration_seconds = max(time.perf_counter() - self._started_at_monotonic, 0.25)
-        sample_count = max(int(round(duration_seconds * self.sample_rate)), 1)
-        silent_audio = np.zeros((sample_count, self.channels), dtype=np.float32)
-        write_wav_file(recording_path, silent_audio, self.sample_rate)
-
-        stopped_at_iso = datetime.now().isoformat(timespec="seconds")
-        return RecordingResult(
-            recording_file=recording_path,
-            recording_started_at=self._started_at_iso,
-            recording_stopped_at=stopped_at_iso,
-            recording_duration_seconds=duration_seconds,
-            backend=self.backend_name,
-        )
-
-
-def create_recorder(recordings_dir: Path, simulate_recording: bool, sample_rate: int, channels: int) -> BaseRecorder:
-    """Create the preferred recorder backend for the current environment."""
-
-    if simulate_recording:
-        return SimulatedRecorder(recordings_dir=recordings_dir, sample_rate=sample_rate, channels=channels)
+def create_recorder(recordings_dir: Path, sample_rate: int, channels: int) -> BaseRecorder:
+    """Create the real microphone recorder backend for the current environment."""
 
     try:
         return SoundDeviceRecorder(recordings_dir=recordings_dir, sample_rate=sample_rate, channels=channels)
     except Exception as exc:  # pragma: no cover - depends on host audio stack
         raise RuntimeError(
             "Real microphone recording requires a working PortAudio backend. "
-            "Install PortAudio on the target machine or rerun with --simulate-recording."
+            "Install PortAudio and confirm the system microphone is available on the target machine."
         ) from exc
 
 

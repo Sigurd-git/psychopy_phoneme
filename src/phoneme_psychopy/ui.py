@@ -14,10 +14,14 @@ def _parse_bool_choice(raw_value: str) -> bool:
 
 
 def parse_cli_args() -> argparse.Namespace:
-    """Parse optional command-line overrides for debugging and dry runs."""
+    """Parse optional command-line overrides for debugging and headless runs."""
 
     parser = argparse.ArgumentParser(description="PsychoPy phoneme experiment scaffold")
-    parser.add_argument("--dry-run", action="store_true", help="Build the session without opening PsychoPy windows")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build the session without opening PsychoPy windows, but still record from the real microphone backend",
+    )
     parser.add_argument("--subject-id", default="pilot001", help="Override subject identifier")
     parser.add_argument(
         "--session-type",
@@ -28,9 +32,9 @@ def parse_cli_args() -> argparse.Namespace:
     parser.add_argument("--fullscreen", action="store_true", help="Open PsychoPy in fullscreen mode")
     parser.add_argument("--practice", action="store_true", help="Enable practice trials")
     parser.add_argument(
-        "--simulate-recording",
+        "--show-phoneme-label",
         action="store_true",
-        help="Write silent placeholder WAV files instead of using a real microphone backend",
+        help="Display the target phoneme on the response screen for debugging",
     )
     parser.add_argument(
         "--max-trials",
@@ -64,7 +68,7 @@ def prompt_for_config(args: argparse.Namespace) -> dict[str, object]:
         "session_type": args.session_type,
         "fullscreen": args.fullscreen,
         "practice_enabled": args.practice,
-        "simulate_recording": args.simulate_recording,
+        "show_phoneme_label": args.show_phoneme_label,
     }
 
     print("\nPhoneme Experiment Setup")
@@ -85,14 +89,16 @@ def prompt_for_config(args: argparse.Namespace) -> dict[str, object]:
 
     fullscreen_input = input(f"Fullscreen [{defaults['fullscreen']}]: ").strip()
     practice_input = input(f"Practice block [{defaults['practice_enabled']}]: ").strip()
-    simulate_input = input(f"Simulate recording [{defaults['simulate_recording']}]: ").strip()
+    show_phoneme_input = input(f"Show phoneme label [{defaults['show_phoneme_label']}]: ").strip()
 
     return {
         "subject_id": subject_id,
         "session_type": session_type,
         "fullscreen": _parse_bool_choice(fullscreen_input) if fullscreen_input else bool(defaults["fullscreen"]),
         "practice_enabled": _parse_bool_choice(practice_input) if practice_input else bool(defaults["practice_enabled"]),
-        "simulate_recording": _parse_bool_choice(simulate_input) if simulate_input else bool(defaults["simulate_recording"]),
+        "show_phoneme_label": _parse_bool_choice(show_phoneme_input)
+        if show_phoneme_input
+        else bool(defaults["show_phoneme_label"]),
     }
 
 
@@ -106,7 +112,7 @@ def build_config_from_cli(args: argparse.Namespace) -> ExperimentConfig:
             session_type=str(prompted_values["session_type"]),
             fullscreen=bool(prompted_values["fullscreen"]),
             practice_enabled=bool(prompted_values["practice_enabled"]),
-            simulate_recording=bool(prompted_values["simulate_recording"]),
+            show_phoneme_label=bool(prompted_values["show_phoneme_label"]),
         )
 
     return ExperimentConfig(
@@ -114,7 +120,7 @@ def build_config_from_cli(args: argparse.Namespace) -> ExperimentConfig:
         session_type=args.session_type,
         fullscreen=args.fullscreen,
         practice_enabled=args.practice,
-        simulate_recording=args.simulate_recording,
+        show_phoneme_label=args.show_phoneme_label,
     )
 
 

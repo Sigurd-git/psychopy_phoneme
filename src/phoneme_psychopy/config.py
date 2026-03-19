@@ -20,7 +20,7 @@ class ExperimentConfig:
     session_type: str
     fullscreen: bool
     practice_enabled: bool
-    simulate_recording: bool = False
+    show_phoneme_label: bool = False
     recording_sample_rate: int = 44100
     recording_channels: int = 1
     schedule_path: Path = DEFAULT_SCHEDULE_PATH
