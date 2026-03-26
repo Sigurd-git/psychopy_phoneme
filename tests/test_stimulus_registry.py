@@ -135,6 +135,81 @@ class StimulusRegistryTests(unittest.TestCase):
             self.assertEqual(practice_trial.stimulus_file, stimulus_path)
             self.assertEqual(practice_trial.noise_file, noise_path)
 
+    def test_attach_generated_stimulus_paths_falls_back_to_metadata_when_trial_index_points_to_wrong_row(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_root = Path(temp_dir)
+            wrong_stimulus_path = project_root / "stimuli" / "mixed" / "white" / "snr_10" / "trial-001.wav"
+            correct_stimulus_path = project_root / "stimuli" / "mixed" / "white" / "snr_0" / "trial-041.wav"
+            noise_path = project_root / "stimuli" / "noise" / "white.wav"
+            wrong_stimulus_path.parent.mkdir(parents=True, exist_ok=True)
+            correct_stimulus_path.parent.mkdir(parents=True, exist_ok=True)
+            noise_path.parent.mkdir(parents=True, exist_ok=True)
+            wrong_stimulus_path.write_bytes(b"wrong wav")
+            correct_stimulus_path.write_bytes(b"correct wav")
+            noise_path.write_bytes(b"fake wav")
+
+            manifest_path = project_root / "stimuli" / "mixed" / "manifest.csv"
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            with manifest_path.open("w", newline="", encoding="utf-8") as manifest_file:
+                writer = csv.DictWriter(
+                    manifest_file,
+                    fieldnames=[
+                        "trial_index",
+                        "track_id",
+                        "phoneme",
+                        "session_type",
+                        "snr",
+                        "onset_label",
+                        "stimulus_file",
+                        "noise_file",
+                        "clean_file",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "trial_index": 1,
+                        "track_id": "1A",
+                        "phoneme": "z",
+                        "session_type": "white",
+                        "snr": 10.0,
+                        "onset_label": "07:00",
+                        "stimulus_file": wrong_stimulus_path.as_posix(),
+                        "noise_file": noise_path.as_posix(),
+                        "clean_file": (project_root / "stimuli" / "phonemes" / "z.wav").as_posix(),
+                    }
+                )
+                writer.writerow(
+                    {
+                        "trial_index": 41,
+                        "track_id": "1C",
+                        "phoneme": "v",
+                        "session_type": "white",
+                        "snr": 0.0,
+                        "onset_label": "07:00",
+                        "stimulus_file": correct_stimulus_path.as_posix(),
+                        "noise_file": noise_path.as_posix(),
+                        "clean_file": (project_root / "stimuli" / "phonemes" / "v.wav").as_posix(),
+                    }
+                )
+
+            reordered_trial = TrialDefinition(
+                track_id="1C",
+                snr=0.0,
+                onset_label="07:00",
+                phoneme="v",
+                session_type="white",
+                trial_index=1,
+                source_sheet="Template",
+                source_row=10,
+                source_column="D",
+            )
+
+            attach_generated_stimulus_paths([reordered_trial], manifest_path=manifest_path, project_root=project_root)
+
+            self.assertEqual(reordered_trial.stimulus_file, correct_stimulus_path)
+            self.assertEqual(reordered_trial.noise_file, noise_path)
+
 
 if __name__ == "__main__":
     unittest.main()

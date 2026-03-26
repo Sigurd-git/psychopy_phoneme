@@ -45,9 +45,12 @@ def attach_generated_stimulus_paths(
         _manifest_metadata_key(manifest_row): manifest_row for manifest_row in manifest_rows
     }
     for trial in trials:
+        trial_metadata_key = _trial_metadata_key(trial)
         manifest_row = manifest_rows_by_trial_index.get(trial.trial_index)
+        if manifest_row is not None and _manifest_metadata_key(manifest_row) != trial_metadata_key:
+            manifest_row = None
         if manifest_row is None:
-            manifest_row = manifest_rows_by_metadata.get(_trial_metadata_key(trial))
+            manifest_row = manifest_rows_by_metadata.get(trial_metadata_key)
         if manifest_row is None:
             continue
         trial.stimulus_file = _resolve_manifest_path(manifest_row["stimulus_file"], manifest_path, project_root)

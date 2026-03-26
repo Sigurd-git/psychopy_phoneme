@@ -17,6 +17,10 @@ TRACK_LABEL_PREFIXES = tuple(
     for noise_index in (1, 2)
     for snr_band in ("A", "B", "C", "D", "E")
 )
+PLAYBACK_TRACK_ORDER = ("1C", "2B", "1E", "2D", "2A", "1D", "2E", "1A", "2C", "1B")
+PLAYBACK_TRACK_ORDER_INDEX = {
+    track_id: order_index for order_index, track_id in enumerate(PLAYBACK_TRACK_ORDER)
+}
 
 
 def load_trials_from_workbook(schedule_path: Path, sheet_name: str = "Template") -> list[TrialDefinition]:
@@ -67,7 +71,7 @@ def load_trials_from_workbook(schedule_path: Path, sheet_name: str = "Template")
             )
             parsed_trials.append(trial_definition)
 
-    return parsed_trials
+    return reorder_trials_for_playback(parsed_trials)
 
 
 def find_row_index_containing_value(worksheet, target_value: str) -> int | None:
@@ -97,6 +101,22 @@ def build_trial_preview_table(trials: list[TrialDefinition]) -> pd.DataFrame:
     """Return a compact preview table for debugging and validation."""
 
     return pd.DataFrame([asdict(trial) for trial in trials])
+
+
+def reorder_trials_for_playback(trials: list[TrialDefinition]) -> list[TrialDefinition]:
+    """Apply the experiment playback order and renumber trials accordingly."""
+
+    ordered_trials = sorted(
+        trials,
+        key=lambda trial: (
+            PLAYBACK_TRACK_ORDER_INDEX.get(trial.track_id, len(PLAYBACK_TRACK_ORDER_INDEX)),
+            trial.source_row,
+            trial.source_column,
+        ),
+    )
+    for trial_index, trial in enumerate(ordered_trials, start=1):
+        trial.trial_index = trial_index
+    return ordered_trials
 
 
 def format_onset_label(cell_value: object) -> str:
