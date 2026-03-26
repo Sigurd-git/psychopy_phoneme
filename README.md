@@ -4,7 +4,7 @@ Minimal, research-oriented scaffold for a PsychoPy experiment on phoneme percept
 
 ## Current scaffold features
 
-- Offline stimulus generation from `original_stims/`
+- Offline stimulus generation from `original_stimuli/`
 - Random noise cropping matched to each phoneme duration
 - RMS normalization and per-trial SNR mixing
 - Stimulus manifest generation for traceability

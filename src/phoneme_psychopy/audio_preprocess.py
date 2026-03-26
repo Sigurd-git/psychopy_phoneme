@@ -111,19 +111,24 @@ def select_noise_segment(noise_samples: np.ndarray, segment_length: int, rng: ra
 
 
 def mix_at_snr(clean_samples: np.ndarray, noise_samples: np.ndarray, snr_db: float) -> tuple[np.ndarray, float]:
-    """Mix clean and noise waveforms at the requested SNR in dB."""
+    """Mix clean and noise waveforms at the requested SNR in dB.
+
+    Noise is treated as the fixed-level reference. Speech is scaled to achieve
+    the requested SNR relative to that fixed noise floor.
+    """
 
     clean_rms = rms(clean_samples)
     noise_rms = rms(noise_samples)
-    if noise_rms == 0:
+    if clean_rms == 0 or noise_rms == 0:
         return clean_samples.copy(), 0.0
-    target_noise_rms = clean_rms / (10 ** (snr_db / 20.0))
-    noise_scale = target_noise_rms / noise_rms
-    mixed_samples = clean_samples + noise_samples * noise_scale
+    target_clean_rms = noise_rms * (10 ** (snr_db / 20.0))
+    clean_scale = target_clean_rms / clean_rms
+    scaled_clean_samples = clean_samples * clean_scale
+    mixed_samples = scaled_clean_samples + noise_samples
     peak = float(np.max(np.abs(mixed_samples)))
     if peak > PEAK_LIMIT:
         mixed_samples = mixed_samples * (PEAK_LIMIT / peak)
-    return mixed_samples.astype(np.float32), float(noise_scale)
+    return mixed_samples.astype(np.float32), float(clean_scale)
 
 
 def generate_stimuli(
@@ -170,7 +175,8 @@ def generate_stimuli(
         rng = random.Random(seed + trial.trial_index)
         noise_pool = decoded_noise_cache[trial.session_type]
         noise_segment, noise_start_index = select_noise_segment(noise_pool, len(clean_samples), rng)
-        mixed_samples, noise_scale = mix_at_snr(clean_samples, noise_segment, trial.snr)
+        normalized_noise_segment = normalize_rms(noise_segment)
+        mixed_samples, clean_scale = mix_at_snr(clean_samples, normalized_noise_segment, trial.snr)
 
         phoneme_label = phoneme_safe_label(trial.phoneme)
         mixed_file_name = (
@@ -198,8 +204,10 @@ def generate_stimuli(
                 "sample_rate": target_sample_rate,
                 "duration_seconds": len(clean_samples) / target_sample_rate,
                 "noise_start_index": noise_start_index,
-                "noise_scale": noise_scale,
+                "clean_scale": clean_scale,
                 "clean_rms": rms(clean_samples),
+                "noise_rms": rms(normalized_noise_segment),
+                "scaled_clean_rms": rms(clean_samples * clean_scale),
                 "mixed_rms": rms(mixed_samples),
             }
         )
@@ -225,7 +233,7 @@ def phoneme_safe_label(phoneme_symbol: str) -> str:
 def main() -> None:
     """CLI entry point for offline stimulus generation."""
 
-    original_stimuli_dir = PROJECT_ROOT / "original_stims"
+    original_stimuli_dir = PROJECT_ROOT / "original_stimuli"
     schedule_path = PROJECT_ROOT / "Speech_on_the_Brain_stimuli_tracking.xlsx"
     manifest_path = generate_stimuli(original_stimuli_dir=original_stimuli_dir, schedule_path=schedule_path)
     print(manifest_path.as_posix())
