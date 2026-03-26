@@ -14,8 +14,9 @@ from .models import RunSummary, TrialDefinition, TrialEventTimes
 INSTRUCTION_TEXT = (
     "You will hear speech sounds in background noise.\n\n"
     "Listen carefully.\n"
-    "After each sound, press SPACE to start recording your verbal response.\n"
-    "Press SPACE again when you finish speaking.\n\n"
+    "After each sound, recording will start automatically for your verbal response.\n"
+    "Press SPACE when you finish speaking.\n"
+    "Press SPACE again to begin the next sound.\n\n"
     "Press SPACE to begin or ESC to quit."
 )
 
@@ -39,7 +40,8 @@ def _build_response_prompt_text(trial: TrialDefinition, show_phoneme_label: bool
         [
             "",
             "Please repeat what you heard.",
-            "Press SPACE to start recording, or ESC to quit.",
+            "Recording has started automatically.",
+            "Press SPACE when you finish speaking, or ESC to quit.",
         ]
     )
     return "\n".join(prompt_lines)
@@ -69,7 +71,7 @@ def run_placeholder_trials(
     current_block_index: int | None = None
     completed_trials = 0
     aborted_after_trial_index: int | None = None
-    for trial in trials:
+    for trial_position, trial in enumerate(trials):
         if trial.block_index == 0 and trial.trial_in_block == 1:
             text_stimulus.text = (
                 "Practice block\n\n"
@@ -125,21 +127,12 @@ def run_placeholder_trials(
 
         play_audio_file(stimulus_path)
 
-        text_stimulus.text = _build_response_prompt_text(trial, show_phoneme_label=show_phoneme_label)
-        text_stimulus.draw()
-        window.flip()
         response_prompt_time = datetime.now().isoformat(timespec="seconds")
         response_prompt_monotonic = time.perf_counter()
-        keys = event.waitKeys(keyList=["space", "escape"])
-        if keys and "escape" in keys:
-            update_trial_status(trial_log_path, trial, "aborted_before_recording", "Run aborted at response prompt")
-            aborted_after_trial_index = trial.trial_index
-            break
-
+        recorder.start_trial_recording(trial)
         recording_start_reaction_time_seconds = time.perf_counter() - response_prompt_monotonic
         recording_prompt_display_time = datetime.now().isoformat(timespec="seconds")
-        recorder.start_trial_recording(trial)
-        text_stimulus.text = "Recording...\nPress SPACE when finished speaking."
+        text_stimulus.text = _build_response_prompt_text(trial, show_phoneme_label=show_phoneme_label)
         text_stimulus.draw()
         window.flip()
         keys = event.waitKeys(keyList=["space", "escape"])
@@ -158,10 +151,16 @@ def run_placeholder_trials(
         update_trial_log_after_recording(trial_log_path, trial, recording_result, event_times)
         completed_trials += 1
 
-        text_stimulus.text = "Response saved.\nPreparing next trial..."
-        text_stimulus.draw()
-        window.flip()
-        core.wait(0.4)
+        if trial_position < len(trials) - 1:
+            text_stimulus.text = "Response saved.\nPress SPACE to start the next sound."
+            text_stimulus.draw()
+            window.flip()
+            keys = event.waitKeys(keyList=["space", "escape"])
+            if keys and "escape" in keys:
+                next_trial = trials[trial_position + 1]
+                update_trial_status(trial_log_path, next_trial, "aborted_before_start", "Run aborted before next stimulus")
+                aborted_after_trial_index = trial.trial_index
+                break
 
     if aborted_after_trial_index is None and completed_trials == len(trials):
         text_stimulus.text = "This session is complete.\n\nThank you."
