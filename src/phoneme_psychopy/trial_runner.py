@@ -26,8 +26,12 @@ BLOCK_LABELS = {
     "babble": "Babble noise block",
 }
 
+MINIMUM_SPEECH_PEAK_SOUND_LEVEL = 0.05
 
-def _build_response_prompt_text(trial: TrialDefinition, show_phoneme_label: bool = False) -> str:
+
+def _build_response_prompt_text(
+    trial: TrialDefinition, show_phoneme_label: bool = False
+) -> str:
     """Build the participant-facing response prompt, hiding the target phoneme by default."""
 
     phase_label = "Practice" if trial.is_practice else f"Block {trial.block_index}"
@@ -47,6 +51,28 @@ def _build_response_prompt_text(trial: TrialDefinition, show_phoneme_label: bool
     return "\n".join(prompt_lines)
 
 
+def _build_retry_response_prompt_text(
+    trial: TrialDefinition, show_phoneme_label: bool = False
+) -> str:
+    """Build the retry prompt shown when the current recording never rose above the speech threshold."""
+
+    phase_label = "Practice" if trial.is_practice else f"Block {trial.block_index}"
+    prompt_lines = [
+        f"{phase_label} · Trial {trial.trial_in_block}",
+    ]
+    if show_phoneme_label:
+        prompt_lines.append(f"Phoneme label: {trial.phoneme}")
+    prompt_lines.extend(
+        [
+            "",
+            "No speech detected. Please say it again.",
+            "This SPACE press was ignored and recording is still running.",
+            "Press SPACE when you finish speaking, or ESC to quit.",
+        ]
+    )
+    return "\n".join(prompt_lines)
+
+
 def run_placeholder_trials(
     window: Any,
     trials: list[TrialDefinition],
@@ -58,7 +84,9 @@ def run_placeholder_trials(
 
     from psychopy import core, event, visual
 
-    text_stimulus = visual.TextStim(window, color="white", height=0.05, wrapWidth=1.5, text="")
+    text_stimulus = visual.TextStim(
+        window, color="white", height=0.05, wrapWidth=1.5, text=""
+    )
     fixation_stimulus = visual.TextStim(window, color="white", height=0.08, text="+")
 
     text_stimulus.text = INSTRUCTION_TEXT
@@ -66,7 +94,9 @@ def run_placeholder_trials(
     window.flip()
     keys = event.waitKeys(keyList=["space", "escape"])
     if keys and "escape" in keys:
-        return RunSummary(completed_trials=0, aborted=True, aborted_after_trial_index=None)
+        return RunSummary(
+            completed_trials=0, aborted=True, aborted_after_trial_index=None
+        )
 
     current_block_index: int | None = None
     completed_trials = 0
@@ -82,8 +112,17 @@ def run_placeholder_trials(
             window.flip()
             keys = event.waitKeys(keyList=["space", "escape"])
             if keys and "escape" in keys:
-                update_trial_status(trial_log_path, trial, "aborted_before_start", "Run aborted at practice block entry")
-                return RunSummary(completed_trials=completed_trials, aborted=True, aborted_after_trial_index=aborted_after_trial_index)
+                update_trial_status(
+                    trial_log_path,
+                    trial,
+                    "aborted_before_start",
+                    "Run aborted at practice block entry",
+                )
+                return RunSummary(
+                    completed_trials=completed_trials,
+                    aborted=True,
+                    aborted_after_trial_index=aborted_after_trial_index,
+                )
 
         if trial.block_index != 0 and trial.block_index != current_block_index:
             if current_block_index is not None:
@@ -92,8 +131,17 @@ def run_placeholder_trials(
                 window.flip()
                 keys = event.waitKeys(keyList=["space", "escape"])
                 if keys and "escape" in keys:
-                    update_trial_status(trial_log_path, trial, "aborted_before_start", "Run aborted during break screen")
-                    return RunSummary(completed_trials=completed_trials, aborted=True, aborted_after_trial_index=aborted_after_trial_index)
+                    update_trial_status(
+                        trial_log_path,
+                        trial,
+                        "aborted_before_start",
+                        "Run aborted during break screen",
+                    )
+                    return RunSummary(
+                        completed_trials=completed_trials,
+                        aborted=True,
+                        aborted_after_trial_index=aborted_after_trial_index,
+                    )
 
             current_block_index = trial.block_index
             text_stimulus.text = (
@@ -105,8 +153,17 @@ def run_placeholder_trials(
             window.flip()
             keys = event.waitKeys(keyList=["space", "escape"])
             if keys and "escape" in keys:
-                update_trial_status(trial_log_path, trial, "aborted_before_start", "Run aborted at block entry")
-                return RunSummary(completed_trials=completed_trials, aborted=True, aborted_after_trial_index=aborted_after_trial_index)
+                update_trial_status(
+                    trial_log_path,
+                    trial,
+                    "aborted_before_start",
+                    "Run aborted at block entry",
+                )
+                return RunSummary(
+                    completed_trials=completed_trials,
+                    aborted=True,
+                    aborted_after_trial_index=aborted_after_trial_index,
+                )
 
         fixation_stimulus.draw()
         window.flip()
@@ -130,25 +187,50 @@ def run_placeholder_trials(
         response_prompt_time = datetime.now().isoformat(timespec="seconds")
         response_prompt_monotonic = time.perf_counter()
         recorder.start_trial_recording(trial)
-        recording_start_reaction_time_seconds = time.perf_counter() - response_prompt_monotonic
+        recording_start_reaction_time_seconds = (
+            time.perf_counter() - response_prompt_monotonic
+        )
         recording_prompt_display_time = datetime.now().isoformat(timespec="seconds")
-        text_stimulus.text = _build_response_prompt_text(trial, show_phoneme_label=show_phoneme_label)
+        text_stimulus.text = _build_response_prompt_text(
+            trial, show_phoneme_label=show_phoneme_label
+        )
         text_stimulus.draw()
         window.flip()
-        keys = event.waitKeys(keyList=["space", "escape"])
-        if keys and "escape" in keys:
-            update_trial_status(trial_log_path, trial, "aborted_during_recording", "Run aborted while recording response")
-            aborted_after_trial_index = trial.trial_index
+        while True:
+            keys = event.waitKeys(keyList=["space", "escape"])
+            if keys and "escape" in keys:
+                recorder.discard_trial_recording()
+                update_trial_status(
+                    trial_log_path,
+                    trial,
+                    "aborted_during_recording",
+                    "Run aborted while recording response",
+                )
+                aborted_after_trial_index = trial.trial_index
+                break
+
+            if recorder.has_detected_speech(MINIMUM_SPEECH_PEAK_SOUND_LEVEL):
+                recording_result = recorder.stop_trial_recording()
+                break
+
+            text_stimulus.text = _build_retry_response_prompt_text(
+                trial, show_phoneme_label=show_phoneme_label
+            )
+            text_stimulus.draw()
+            window.flip()
+
+        if aborted_after_trial_index is not None:
             break
 
-        recording_result = recorder.stop_trial_recording()
         event_times = TrialEventTimes(
             stimulus_onset_time=stimulus_onset_time,
             response_prompt_time=response_prompt_time,
             recording_start_reaction_time_seconds=recording_start_reaction_time_seconds,
             recording_prompt_display_time=recording_prompt_display_time,
         )
-        update_trial_log_after_recording(trial_log_path, trial, recording_result, event_times)
+        update_trial_log_after_recording(
+            trial_log_path, trial, recording_result, event_times
+        )
         completed_trials += 1
 
         if trial_position < len(trials) - 1:
@@ -158,7 +240,12 @@ def run_placeholder_trials(
             keys = event.waitKeys(keyList=["space", "escape"])
             if keys and "escape" in keys:
                 next_trial = trials[trial_position + 1]
-                update_trial_status(trial_log_path, next_trial, "aborted_before_start", "Run aborted before next stimulus")
+                update_trial_status(
+                    trial_log_path,
+                    next_trial,
+                    "aborted_before_start",
+                    "Run aborted before next stimulus",
+                )
                 aborted_after_trial_index = trial.trial_index
                 break
 
@@ -167,7 +254,11 @@ def run_placeholder_trials(
         text_stimulus.draw()
         window.flip()
         core.wait(1.0)
-        return RunSummary(completed_trials=completed_trials, aborted=False, aborted_after_trial_index=None)
+        return RunSummary(
+            completed_trials=completed_trials,
+            aborted=False,
+            aborted_after_trial_index=None,
+        )
 
     return RunSummary(
         completed_trials=completed_trials,
@@ -187,9 +278,18 @@ def run_headless_trials(
     completed_trials = 0
     aborted_after_trial_index: int | None = None
     for completed_count_before_trial, trial in enumerate(trials):
-        if abort_after_trial_count is not None and completed_count_before_trial >= abort_after_trial_count:
-            update_trial_status(trial_log_path, trial, "aborted_before_start", "Dry-run early stop")
-            aborted_after_trial_index = trials[completed_count_before_trial - 1].trial_index if completed_count_before_trial > 0 else None
+        if (
+            abort_after_trial_count is not None
+            and completed_count_before_trial >= abort_after_trial_count
+        ):
+            update_trial_status(
+                trial_log_path, trial, "aborted_before_start", "Dry-run early stop"
+            )
+            aborted_after_trial_index = (
+                trials[completed_count_before_trial - 1].trial_index
+                if completed_count_before_trial > 0
+                else None
+            )
             break
 
         stimulus_onset_time = datetime.now().isoformat(timespec="seconds")
@@ -197,7 +297,9 @@ def run_headless_trials(
         response_prompt_time = datetime.now().isoformat(timespec="seconds")
         response_prompt_monotonic = time.perf_counter()
         time.sleep(0.01)
-        recording_start_reaction_time_seconds = time.perf_counter() - response_prompt_monotonic
+        recording_start_reaction_time_seconds = (
+            time.perf_counter() - response_prompt_monotonic
+        )
         recording_prompt_display_time = datetime.now().isoformat(timespec="seconds")
         recorder.start_trial_recording(trial)
         time.sleep(0.01)

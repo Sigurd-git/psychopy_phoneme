@@ -13,17 +13,21 @@ from phoneme_psychopy.trial_runner import _build_response_prompt_text, run_place
 
 
 class _FakeWindow:
+    def __init__(self) -> None:
+        self.drawn_texts: list[str] = []
+
     def flip(self) -> None:
         pass
 
 
 class _FakeTextStim:
     def __init__(self, window: _FakeWindow, color: str, height: float, text: str, wrapWidth: float | None = None) -> None:
-        del window, color, height, wrapWidth
+        del color, height, wrapWidth
+        self._window = window
         self.text = text
 
     def draw(self) -> None:
-        pass
+        self._window.drawn_texts.append(self.text)
 
 
 class _FakeEventModule:
@@ -39,10 +43,12 @@ class _FakeEventModule:
 
 
 class _FakeRecorder:
-    def __init__(self) -> None:
+    def __init__(self, peak_sound_levels: list[float] | None = None) -> None:
         self.started_trials: list[int] = []
         self.stopped_trials: list[int] = []
+        self.discarded_trials: list[int] = []
         self._active_trial: TrialDefinition | None = None
+        self._peak_sound_levels = list(peak_sound_levels or [])
 
     def start_trial_recording(self, trial: TrialDefinition) -> None:
         self._active_trial = trial
@@ -62,6 +68,17 @@ class _FakeRecorder:
             recording_duration_seconds=1.0,
             backend="fake",
         )
+
+    def discard_trial_recording(self) -> None:
+        if self._active_trial is None:
+            raise AssertionError("discard_trial_recording called before start_trial_recording")
+        self.discarded_trials.append(self._active_trial.trial_index)
+        self._active_trial = None
+
+    def has_detected_speech(self, minimum_peak_sound_level: float) -> bool:
+        if not self._peak_sound_levels:
+            return True
+        return self._peak_sound_levels.pop(0) >= minimum_peak_sound_level
 
 
 class TrialRunnerPromptTests(unittest.TestCase):
@@ -154,6 +171,7 @@ class TrialRunnerPromptTests(unittest.TestCase):
                     ["space"],
                     ["space"],
                     ["space"],
+                    ["space"],
                 ]
             )
             fake_core = types.SimpleNamespace(wait=lambda seconds: None)
@@ -165,6 +183,7 @@ class TrialRunnerPromptTests(unittest.TestCase):
             recorder = _FakeRecorder()
             playback_calls: list[Path] = []
             log_calls: list[int] = []
+            window = _FakeWindow()
 
             with (
                 mock.patch.dict(
@@ -187,7 +206,7 @@ class TrialRunnerPromptTests(unittest.TestCase):
                 mock.patch("phoneme_psychopy.trial_runner.update_trial_status") as mock_update_status,
             ):
                 summary = run_placeholder_trials(
-                    _FakeWindow(),
+                    window,
                     trials,
                     recorder,
                     Path(temp_dir) / "trial_log.csv",
@@ -198,8 +217,88 @@ class TrialRunnerPromptTests(unittest.TestCase):
         self.assertEqual(playback_calls, stimulus_paths)
         self.assertEqual(recorder.started_trials, [1, 2])
         self.assertEqual(recorder.stopped_trials, [1, 2])
+        self.assertEqual(recorder.discarded_trials, [])
         self.assertEqual(log_calls, [1, 2])
         self.assertEqual(len(fake_event.calls), 5)
+        mock_update_status.assert_not_called()
+
+    def test_run_placeholder_trials_keeps_rejecting_space_until_speech_is_detected(self) -> None:
+        trial = TrialDefinition(
+            track_id="1A",
+            snr=10.0,
+            onset_label="07:00",
+            phoneme="z",
+            session_type="white",
+            trial_index=1,
+            source_sheet="Template",
+            source_row=1,
+            source_column="D",
+            block_index=1,
+            trial_in_block=1,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stimulus_path = Path(temp_dir) / "stimulus-1.wav"
+            stimulus_path.write_bytes(b"stub")
+            trial.stimulus_file = stimulus_path
+
+            fake_event = _FakeEventModule(
+                [
+                    ["space"],
+                    ["space"],
+                    ["space"],
+                    ["space"],
+                    ["space"],
+                    ["space"],
+                ]
+            )
+            fake_core = types.SimpleNamespace(wait=lambda seconds: None)
+            fake_visual = types.SimpleNamespace(TextStim=_FakeTextStim)
+            fake_psychopy = types.ModuleType("psychopy")
+            fake_psychopy.core = fake_core
+            fake_psychopy.event = fake_event
+            fake_psychopy.visual = fake_visual
+            recorder = _FakeRecorder(peak_sound_levels=[0.001, 0.002, 0.003, 0.05])
+            log_calls: list[int] = []
+            window = _FakeWindow()
+
+            with (
+                mock.patch.dict(
+                    sys.modules,
+                    {
+                        "psychopy": fake_psychopy,
+                        "psychopy.core": fake_core,
+                        "psychopy.event": fake_event,
+                        "psychopy.visual": fake_visual,
+                    },
+                ),
+                mock.patch("phoneme_psychopy.trial_runner.play_audio_file"),
+                mock.patch(
+                    "phoneme_psychopy.trial_runner.update_trial_log_after_recording",
+                    side_effect=lambda *args, **kwargs: log_calls.append(args[1].trial_index),
+                ),
+                mock.patch("phoneme_psychopy.trial_runner.update_trial_status") as mock_update_status,
+            ):
+                summary = run_placeholder_trials(
+                    window,
+                    [trial],
+                    recorder,
+                    Path(temp_dir) / "trial_log.csv",
+                )
+
+        self.assertFalse(summary.aborted)
+        self.assertEqual(summary.completed_trials, 1)
+        self.assertEqual(recorder.started_trials, [1])
+        self.assertEqual(recorder.stopped_trials, [1])
+        self.assertEqual(recorder.discarded_trials, [])
+        self.assertEqual(log_calls, [1])
+        retry_prompt_count = sum(
+            "No speech detected. Please say it again." in text and
+            "This SPACE press was ignored and recording is still running." in text
+            for text in window.drawn_texts
+        )
+        self.assertEqual(retry_prompt_count, 3)
+        self.assertEqual(len(fake_event.calls), 6)
         mock_update_status.assert_not_called()
 
 

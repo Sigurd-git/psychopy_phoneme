@@ -44,6 +44,15 @@ class BaseRecorder:
     def stop_trial_recording(self) -> RecordingResult:
         raise NotImplementedError
 
+    def discard_trial_recording(self) -> None:
+        raise NotImplementedError
+
+    def get_peak_sound_level(self) -> float:
+        return 0.0
+
+    def has_detected_speech(self, minimum_peak_sound_level: float) -> bool:
+        return self.get_peak_sound_level() >= minimum_peak_sound_level
+
     def build_recording_path(self, trial: TrialDefinition) -> Path:
         safe_phoneme_label = phoneme_to_filename_label(trial.phoneme)
         practice_prefix = "practice__" if trial.is_practice else ""
@@ -66,16 +75,20 @@ class SoundDeviceRecorder(BaseRecorder):
         self._sd = sd
         self._stream = None
         self._captured_chunks: list[np.ndarray] = []
+        self._peak_sound_level = 0.0
 
     def start_trial_recording(self, trial: TrialDefinition) -> Path:
         recording_path = super().start_trial_recording(trial)
         self._captured_chunks = []
+        self._peak_sound_level = 0.0
 
         def callback(indata, frames, time_info, status) -> None:  # noqa: ANN001
             del frames, time_info
             if status:
                 print(f"Recording status warning: {status}")
             self._captured_chunks.append(indata.copy())
+            if indata.size:
+                self._peak_sound_level = max(self._peak_sound_level, float(np.max(np.abs(indata))))
 
         self._stream = self._sd.InputStream(
             samplerate=self.sample_rate,
@@ -91,12 +104,7 @@ class SoundDeviceRecorder(BaseRecorder):
             raise RuntimeError("No active trial recording to stop.")
 
         recording_path = self.build_recording_path(self._active_trial)
-        if self._stream is None:
-            raise RuntimeError("Recording stream was not started.")
-
-        self._stream.stop()
-        self._stream.close()
-        self._stream = None
+        self._stop_stream()
 
         if self._captured_chunks:
             captured_audio = np.concatenate(self._captured_chunks, axis=0)
@@ -107,13 +115,40 @@ class SoundDeviceRecorder(BaseRecorder):
 
         stopped_at_iso = datetime.now().isoformat(timespec="seconds")
         duration_seconds = time.perf_counter() - self._started_at_monotonic
-        return RecordingResult(
+        recording_result = RecordingResult(
             recording_file=recording_path,
             recording_started_at=self._started_at_iso,
             recording_stopped_at=stopped_at_iso,
             recording_duration_seconds=duration_seconds,
             backend=self.backend_name,
         )
+        self._reset_trial_state()
+        return recording_result
+
+    def discard_trial_recording(self) -> None:
+        if self._active_trial is None:
+            return
+
+        self._stop_stream()
+        self._reset_trial_state()
+
+    def get_peak_sound_level(self) -> float:
+        return self._peak_sound_level
+
+    def _stop_stream(self) -> None:
+        if self._stream is None:
+            raise RuntimeError("Recording stream was not started.")
+
+        self._stream.stop()
+        self._stream.close()
+        self._stream = None
+
+    def _reset_trial_state(self) -> None:
+        self._active_trial = None
+        self._started_at_monotonic = None
+        self._started_at_iso = None
+        self._captured_chunks = []
+        self._peak_sound_level = 0.0
 
 
 def create_recorder(recordings_dir: Path, sample_rate: int, channels: int) -> BaseRecorder:
