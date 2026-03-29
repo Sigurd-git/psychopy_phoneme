@@ -30,7 +30,12 @@ def parse_cli_args() -> argparse.Namespace:
         help="Select which session to build",
     )
     parser.add_argument("--fullscreen", action="store_true", help="Open PsychoPy in fullscreen mode")
-    parser.add_argument("--practice", action="store_true", help="Enable practice trials")
+    parser.add_argument(
+        "--practice",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable practice trials (default: enabled; use --no-practice to disable)",
+    )
     parser.add_argument(
         "--show-phoneme-label",
         action="store_true",
@@ -119,7 +124,7 @@ def build_config_from_cli(args: argparse.Namespace) -> ExperimentConfig:
         subject_id=args.subject_id,
         session_type=args.session_type,
         fullscreen=args.fullscreen,
-        practice_enabled=args.practice,
+        practice_enabled=bool(args.practice),
         show_phoneme_label=args.show_phoneme_label,
     )
 

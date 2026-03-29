@@ -5,7 +5,7 @@ from dataclasses import replace
 from .models import TrialDefinition
 
 
-PRACTICE_TRIALS_PER_SESSION = 2
+PRACTICE_SNR = 0.0
 
 
 def build_session_trials(all_trials: list[TrialDefinition], session_type: str, include_practice: bool = False) -> list[TrialDefinition]:
@@ -22,7 +22,7 @@ def build_session_trials(all_trials: list[TrialDefinition], session_type: str, i
 
     assign_block_structure(selected_trials)
     if include_practice:
-        selected_trials = prepend_practice_trials(selected_trials)
+        selected_trials = prepend_practice_trials(selected_trials, all_trials)
     return selected_trials
 
 
@@ -44,20 +44,36 @@ def assign_block_structure(trials: list[TrialDefinition]) -> None:
         trial.is_practice = False
 
 
-def prepend_practice_trials(trials: list[TrialDefinition]) -> list[TrialDefinition]:
-    """Create small practice blocks by cloning the first few trials of each session."""
+def prepend_practice_trials(
+    trials: list[TrialDefinition],
+    practice_source_trials: list[TrialDefinition],
+) -> list[TrialDefinition]:
+    """Create a white-noise practice block that covers each phoneme once at a fixed SNR."""
 
     practice_trials: list[TrialDefinition] = []
-    sessions_in_order = sorted({trial.session_type for trial in trials}, key=lambda value: 0 if value == "white" else 1)
-    for session_type in sessions_in_order:
-        session_trials = [trial for trial in trials if trial.session_type == session_type][:PRACTICE_TRIALS_PER_SESSION]
-        for practice_counter, trial in enumerate(session_trials, start=1):
-            practice_trial = replace(
-                trial,
-                trial_index=-(len(practice_trials) + 1),
-                block_index=0,
-                trial_in_block=practice_counter,
-                is_practice=True,
-            )
-            practice_trials.append(practice_trial)
+    session_trials = select_practice_trials_for_session(practice_source_trials, session_type="white")
+    for practice_counter, trial in enumerate(session_trials, start=1):
+        practice_trial = replace(
+            trial,
+            trial_index=-(len(practice_trials) + 1),
+            block_index=0,
+            trial_in_block=practice_counter,
+            is_practice=True,
+        )
+        practice_trials.append(practice_trial)
     return practice_trials + trials
+
+
+def select_practice_trials_for_session(trials: list[TrialDefinition], session_type: str) -> list[TrialDefinition]:
+    """Return one SNR=0 trial per phoneme for the requested session."""
+
+    seen_phonemes: set[str] = set()
+    practice_trials: list[TrialDefinition] = []
+    for trial in trials:
+        if trial.session_type != session_type or float(trial.snr) != PRACTICE_SNR:
+            continue
+        if trial.phoneme in seen_phonemes:
+            continue
+        seen_phonemes.add(trial.phoneme)
+        practice_trials.append(trial)
+    return practice_trials

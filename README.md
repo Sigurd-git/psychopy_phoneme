@@ -33,7 +33,7 @@ uv run phoneme-preprocess
 Validate the non-GUI scaffold while still writing real microphone recordings:
 
 ```bash
-uv run python -m phoneme_psychopy.main --dry-run --session-type both --practice --max-trials 5
+uv run python -m phoneme_psychopy.main --dry-run --session-type both --max-trials 5
 ```
 
 Validate early-stop logging:
