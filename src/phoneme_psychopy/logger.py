@@ -39,34 +39,37 @@ TRIAL_LOG_COLUMNS = [
 ]
 
 
-def initialize_trial_log(trial_log_path: Path, trials: list[TrialDefinition]) -> None:
-    """Write an initial trial log with placeholders for future recording events."""
+def initialize_trial_log(
+    trial_log_path: Path,
+    trials: list[TrialDefinition],
+    existing_recordings: dict[int, Path] | None = None,
+) -> None:
+    """Write or refresh the trial log while preserving any existing completed rows."""
 
-    trial_rows: list[dict[str, object]] = []
-    for trial in trials:
-        row = asdict(trial)
-        row.update(
-            {
-                "stimulus_file": str(trial.stimulus_file) if trial.stimulus_file else "",
-                "noise_file": str(trial.noise_file) if trial.noise_file else "",
-                "trial_status": "pending",
-                "stimulus_onset_time": "",
-                "response_prompt_time": "",
-                "recording_prompt_display_time": "",
-                "recording_start_reaction_time_seconds": "",
-                "participant_started_recording": "",
-                "participant_stopped_recording": "",
-                "recording_duration_seconds": "",
-                "recording_backend": "",
-                "recording_file": "",
-                "completed": False,
-                "notes": "",
-            }
+    trial_log_frame = _build_trial_log_frame(trials).set_index("trial_index")
+    if trial_log_path.exists():
+        existing_frame = pd.read_csv(trial_log_path, dtype=str, keep_default_na=False)
+        for column in TRIAL_LOG_COLUMNS:
+            if column not in existing_frame.columns:
+                existing_frame[column] = ""
+        existing_frame = (
+            existing_frame[TRIAL_LOG_COLUMNS]
+            .drop_duplicates(subset=["trial_index"], keep="last")
+            .set_index("trial_index")
         )
-        trial_rows.append(row)
+        trial_log_frame.update(existing_frame)
 
-    trial_log_frame = pd.DataFrame(trial_rows)
-    trial_log_frame = trial_log_frame[TRIAL_LOG_COLUMNS]
+    for trial_index, recording_path in (existing_recordings or {}).items():
+        trial_index_label = str(trial_index)
+        if trial_index_label not in trial_log_frame.index:
+            continue
+        trial_log_frame.loc[trial_index_label, "trial_status"] = "completed"
+        trial_log_frame.loc[trial_index_label, "recording_file"] = recording_path.as_posix()
+        trial_log_frame.loc[trial_index_label, "completed"] = "True"
+        if not trial_log_frame.loc[trial_index_label, "notes"]:
+            trial_log_frame.loc[trial_index_label, "notes"] = "Detected existing recording during resume"
+
+    trial_log_frame = trial_log_frame.reset_index()
     trial_log_frame.to_csv(trial_log_path, index=False)
 
 
@@ -117,3 +120,32 @@ def update_trial_status(
     trial_log_frame.loc[target_rows, "trial_status"] = trial_status
     trial_log_frame.loc[target_rows, "notes"] = notes
     trial_log_frame.to_csv(trial_log_path, index=False)
+
+
+def _build_trial_log_frame(trials: list[TrialDefinition]) -> pd.DataFrame:
+    trial_rows: list[dict[str, object]] = []
+    for trial in trials:
+        row = asdict(trial)
+        row.update(
+            {
+                "stimulus_file": str(trial.stimulus_file) if trial.stimulus_file else "",
+                "noise_file": str(trial.noise_file) if trial.noise_file else "",
+                "trial_status": "pending",
+                "stimulus_onset_time": "",
+                "response_prompt_time": "",
+                "recording_prompt_display_time": "",
+                "recording_start_reaction_time_seconds": "",
+                "participant_started_recording": "",
+                "participant_stopped_recording": "",
+                "recording_duration_seconds": "",
+                "recording_backend": "",
+                "recording_file": "",
+                "completed": False,
+                "notes": "",
+            }
+        )
+        trial_rows.append(row)
+
+    trial_log_frame = pd.DataFrame(trial_rows, columns=TRIAL_LOG_COLUMNS)
+    trial_log_frame = trial_log_frame.astype(str)
+    return trial_log_frame[TRIAL_LOG_COLUMNS]

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import sys
 
 from .audio_recorder import create_recorder
-from .io_utils import create_run_paths
+from .io_utils import create_run_paths, find_existing_recordings
 from .logger import initialize_trial_log
 from .schedule_loader import build_trial_preview_table, load_trials_from_workbook
 from .session_builder import build_session_trials
@@ -43,12 +44,51 @@ def main() -> None:
                 + "\nRegenerate the stimuli manifest with `uv run phoneme-preprocess` if needed."
             )
 
-    run_paths = create_run_paths(config.subject_id, config.data_dir)
-    initialize_trial_log(run_paths.trial_log_path, session_trials)
+    run_paths = create_run_paths(
+        config.subject_id,
+        config.data_dir,
+        run_subfolder=config.run_subfolder,
+    )
+    existing_recordings = find_existing_recordings(run_paths.recordings_dir, session_trials)
+    initialize_trial_log(
+        run_paths.trial_log_path,
+        session_trials,
+        existing_recordings=existing_recordings,
+    )
+    pending_trials = [
+        trial for trial in session_trials if trial.trial_index not in existing_recordings
+    ]
 
     preview_frame = build_trial_preview_table(session_trials)
     preview_path = run_paths.logs_dir / "trial_preview.csv"
     preview_frame.to_csv(preview_path, index=False)
+
+    if existing_recordings:
+        print(
+            (
+                f"Resuming {run_paths.run_dir.as_posix()}: "
+                f"found {len(existing_recordings)} existing recordings, "
+                f"{len(pending_trials)} trials remaining."
+            ),
+            file=sys.stderr,
+        )
+
+    if not pending_trials:
+        completion_summary = {
+            "config": summarize_config(config),
+            "n_all_trials": len(all_trials),
+            "n_session_trials": len(session_trials),
+            "n_existing_recordings": len(existing_recordings),
+            "n_pending_trials": 0,
+            "trial_log_path": run_paths.trial_log_path.as_posix(),
+            "trial_preview_path": preview_path.as_posix(),
+            "recordings_dir": run_paths.recordings_dir.as_posix(),
+            "completed_trials": 0,
+            "aborted": False,
+            "aborted_after_trial_index": None,
+        }
+        print(json.dumps(completion_summary, indent=2))
+        return
 
     recorder = create_recorder(
         recordings_dir=run_paths.recordings_dir,
@@ -58,7 +98,7 @@ def main() -> None:
 
     if args.dry_run:
         run_summary = run_headless_trials(
-            session_trials,
+            pending_trials,
             recorder,
             run_paths.trial_log_path,
             abort_after_trial_count=args.abort_after_trials,
@@ -67,6 +107,8 @@ def main() -> None:
             "config": summarize_config(config),
             "n_all_trials": len(all_trials),
             "n_session_trials": len(session_trials),
+            "n_existing_recordings": len(existing_recordings),
+            "n_pending_trials": len(pending_trials),
             "trial_log_path": run_paths.trial_log_path.as_posix(),
             "trial_preview_path": preview_path.as_posix(),
             "recordings_dir": run_paths.recordings_dir.as_posix(),
@@ -84,7 +126,7 @@ def main() -> None:
     try:
         run_placeholder_trials(
             window,
-            session_trials,
+            pending_trials,
             recorder,
             run_paths.trial_log_path,
             show_phoneme_label=config.show_phoneme_label,

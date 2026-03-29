@@ -54,13 +54,7 @@ class BaseRecorder:
         return self.get_peak_sound_level() >= minimum_peak_sound_level
 
     def build_recording_path(self, trial: TrialDefinition) -> Path:
-        safe_phoneme_label = phoneme_to_filename_label(trial.phoneme)
-        practice_prefix = "practice__" if trial.is_practice else ""
-        file_name = (
-            f"{practice_prefix}trial-{format_trial_index_label(trial.trial_index)}__track-{trial.track_id}"
-            f"__phoneme-{safe_phoneme_label}__noise-{trial.session_type}__snr-{format_snr_label(trial.snr)}.wav"
-        )
-        return self.recordings_dir / file_name
+        return build_recording_path(self.recordings_dir, trial)
 
 
 class SoundDeviceRecorder(BaseRecorder):
@@ -173,6 +167,19 @@ def write_wav_file(output_path: Path, audio_samples: np.ndarray, sample_rate: in
         wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(int16_samples.tobytes())
+
+
+def build_recording_path(recordings_dir: Path, trial: TrialDefinition) -> Path:
+    return recordings_dir / build_recording_file_name(trial)
+
+
+def build_recording_file_name(trial: TrialDefinition) -> str:
+    safe_phoneme_label = phoneme_to_filename_label(trial.phoneme)
+    practice_prefix = "practice__" if trial.is_practice else ""
+    return (
+        f"{practice_prefix}trial-{format_trial_index_label(trial.trial_index)}__track-{trial.track_id}"
+        f"__phoneme-{safe_phoneme_label}__noise-{trial.session_type}__snr-{format_snr_label(trial.snr)}.wav"
+    )
 
 
 def phoneme_to_filename_label(phoneme: str) -> str:

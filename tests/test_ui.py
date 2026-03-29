@@ -27,6 +27,15 @@ class UiTests(unittest.TestCase):
 
         self.assertTrue(config.practice_enabled)
 
+    def test_parse_cli_args_accepts_subfolder(self) -> None:
+        with mock.patch(
+            "sys.argv",
+            ["phoneme-psychopy", "--subfolder", "sub-Sasha/run-20260329_113244"],
+        ):
+            args = parse_cli_args()
+
+        self.assertEqual(args.subfolder, "sub-Sasha/run-20260329_113244")
+
 
 if __name__ == "__main__":
     unittest.main()

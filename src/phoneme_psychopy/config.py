@@ -20,6 +20,7 @@ class ExperimentConfig:
     session_type: str
     fullscreen: bool
     practice_enabled: bool
+    run_subfolder: str | None = None
     show_phoneme_label: bool = False
     recording_sample_rate: int = 44100
     recording_channels: int = 1

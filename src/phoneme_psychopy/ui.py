@@ -53,6 +53,11 @@ def parse_cli_args() -> argparse.Namespace:
         help="Prompt for run configuration in the terminal before starting",
     )
     parser.add_argument(
+        "--subfolder",
+        default=None,
+        help="Reuse an existing run folder under data/, e.g. sub-Sasha/run-20260329_113244",
+    )
+    parser.add_argument(
         "--abort-after-trials",
         type=int,
         default=None,
@@ -73,6 +78,7 @@ def prompt_for_config(args: argparse.Namespace) -> dict[str, object]:
         "session_type": args.session_type,
         "fullscreen": args.fullscreen,
         "practice_enabled": args.practice,
+        "run_subfolder": args.subfolder,
         "show_phoneme_label": args.show_phoneme_label,
     }
 
@@ -81,6 +87,9 @@ def prompt_for_config(args: argparse.Namespace) -> dict[str, object]:
 
     subject_input = input(f"Subject ID [{defaults['subject_id']}]: ").strip()
     subject_id = subject_input or str(defaults["subject_id"])
+    subfolder_input = input(
+        f"Existing run subfolder [{defaults['run_subfolder'] or 'new run'}]: "
+    ).strip()
 
     while True:
         session_input = input(f"Session type [{defaults['session_type']}] (white/babble/both): ").strip().lower()
@@ -99,6 +108,7 @@ def prompt_for_config(args: argparse.Namespace) -> dict[str, object]:
     return {
         "subject_id": subject_id,
         "session_type": session_type,
+        "run_subfolder": subfolder_input or defaults["run_subfolder"],
         "fullscreen": _parse_bool_choice(fullscreen_input) if fullscreen_input else bool(defaults["fullscreen"]),
         "practice_enabled": _parse_bool_choice(practice_input) if practice_input else bool(defaults["practice_enabled"]),
         "show_phoneme_label": _parse_bool_choice(show_phoneme_input)
@@ -117,6 +127,7 @@ def build_config_from_cli(args: argparse.Namespace) -> ExperimentConfig:
             session_type=str(prompted_values["session_type"]),
             fullscreen=bool(prompted_values["fullscreen"]),
             practice_enabled=bool(prompted_values["practice_enabled"]),
+            run_subfolder=str(prompted_values["run_subfolder"]) if prompted_values["run_subfolder"] else None,
             show_phoneme_label=bool(prompted_values["show_phoneme_label"]),
         )
 
@@ -125,6 +136,7 @@ def build_config_from_cli(args: argparse.Namespace) -> ExperimentConfig:
         session_type=args.session_type,
         fullscreen=args.fullscreen,
         practice_enabled=bool(args.practice),
+        run_subfolder=args.subfolder,
         show_phoneme_label=args.show_phoneme_label,
     )
 
